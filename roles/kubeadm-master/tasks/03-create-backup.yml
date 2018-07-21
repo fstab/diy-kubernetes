@@ -1,0 +1,39 @@
+---
+- name: "Install cifs-utils"
+  apt: name=cifs-utils
+
+- name: "Temporarily mount the backup share read-write"
+  shell: "mountpoint -q '{{ backup_mountpoint }}' || mount -t cifs -o 'rw,username={{ storage.username }},password={{ storage.password }}' '{{ storage.share }}' '{{ backup_mountpoint }}'"
+  changed_when: False
+
+- name: backup root certificate
+  archive:
+    path:
+    - /etc/kubernetes/pki/ca.crt
+    - /etc/kubernetes/pki/ca.key
+    dest: "{{ backup_mountpoint }}/ca-meetup.tar"
+    format: tar
+
+- name: "Unmount the backup share"
+  shell: "umount '{{ backup_mountpoint }}'"
+  changed_when: False
+
+- name: Upload backup volume secret definition
+  template:
+    src: backup-volume-secret.yml.j2
+    dest: /root/backup-volume-secret.yml
+
+- name: Apply backup volume secret definition
+  shell: kubectl apply -f /root/backup-volume-secret.yml
+  register: kubectl_apply_backup_volume_secret
+  changed_when: kubectl_apply_backup_volume_secret.stdout.find('unchanged') == -1
+
+- name: Upload backup cron job definition
+  template:
+    src: "backup-cron-job.yml.j2"
+    dest: "/root/backup-cron-job.yml"
+
+- name: Create backup cron job
+  shell: kubectl apply -f /root/backup-cron-job.yml
+  register: kubectl_apply_backup
+  changed_when: kubectl_apply_backup.stdout.find('unchanged') == -1

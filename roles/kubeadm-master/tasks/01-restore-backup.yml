@@ -1,0 +1,57 @@
+---
+- name: "Install cifs-utils"
+  apt: name=cifs-utils
+  tags: restore
+
+- name: create config directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - /var/lib/etcd
+    - /etc/kubernetes/pki
+  tags: restore
+
+- name: "Temporarily mount the backup share read-only"
+  shell: "mountpoint -q '{{ backup_mountpoint }}' || mount -t cifs -o 'ro,username={{ storage.username }},password={{ storage.password }}' '{{ storage.share }}' '{{ backup_mountpoint }}'"
+  changed_when: False
+  tags: restore
+
+- name: check if root certificate backup exists
+  stat:
+    path: "{{ backup_mountpoint }}/ca-meetup.tar"
+  register: backup_ca_tar
+  tags: restore
+
+# Expected permissions:
+# -rw-r--r-- 1 root root 1025 Apr 11 21:48 ca.crt
+# -rw------- 1 root root 1675 Apr 11 21:48 ca.key
+- name: restore root certificate unless it already exists
+  unarchive:
+    src: "{{ backup_ca_tar.stat.path }}"
+    dest: /etc/kubernetes/pki
+    remote_src: yes
+    keep_newer: True
+    creates: /etc/kubernetes/pki/ca.crt
+  when: backup_ca_tar.stat.exists
+  tags: restore
+
+- name: find latest etcd backup
+  shell: "cd {{ backup_mountpoint }} && ls etcd-snapshot-meetup-*.db | sort | tail -n 1"
+  register: ls_etcd_snapshot
+  changed_when: False
+  tags: restore
+
+# Expected permissions:
+# drwx------ 4 root root 4096 Apr 11 21:48 /var/lib/etcd/member
+- name: restore etcd unless it already exists
+  shell: "docker run --rm -v '{{ backup_mountpoint }}:/backup' -v /var/lib/etcd:/var/lib/etcd --env ETCDCTL_API=3 \"k8s.gcr.io/etcd-amd64:3.1.12\" /bin/sh -c \"etcdctl snapshot restore '/backup/{{ ls_etcd_snapshot.stdout }}' ; mv /default.etcd/member/ /var/lib/etcd/\""
+  args:
+    creates: /var/lib/etcd/member
+  when: ls_etcd_snapshot.stdout.find('etcd-snapshot-meetup') != -1
+  tags: restore
+
+- name: "Unmount the backup share"
+  shell: "umount '{{ backup_mountpoint }}'"
+  changed_when: False
+  tags: restore

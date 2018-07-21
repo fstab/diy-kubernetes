@@ -1,0 +1,5 @@
+#!/bin/bash
+
+ip route del 172.16.0.0/24 dev $INTERFACE
+ip addr del {{ vpn_ip }}/24 dev $INTERFACE
+ip link set $INTERFACE down

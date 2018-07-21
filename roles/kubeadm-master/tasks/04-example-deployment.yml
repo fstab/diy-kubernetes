@@ -1,0 +1,7 @@
+---
+- name: Upload examples to /root/
+  copy:
+    src: '../files/{{ item }}'
+    dest: '/root/{{ item }}'
+  with_items:
+    - 'example-deployment.yml'

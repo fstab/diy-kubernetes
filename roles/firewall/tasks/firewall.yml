@@ -1,0 +1,61 @@
+---
+- name: 'Allow established or related connections on {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    ctstate: ESTABLISHED,RELATED
+    jump: ACCEPT
+  notify:
+    - iptables persist
+- name: 'Allow ssh {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: tcp
+    destination_port: ssh
+    jump: ACCEPT
+  notify:
+    - iptables persist
+- name: 'Allow ping {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: icmp
+    icmp_type: ping
+    jump: ACCEPT
+  notify:
+    - iptables persist
+- name: 'Reject all other tcp traffic {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: tcp
+    reject_with: tcp-reset
+    jump: REJECT
+  notify:
+    - iptables persist
+- name: 'Reject all other udp traffic {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: udp
+    reject_with: icmp-port-unreachable
+    jump: REJECT
+  notify:
+    - iptables persist
+- name: 'Reject all other icmp traffic {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: icmp
+    reject_with: icmp-proto-unreachable
+    jump: REJECT
+  notify:
+    - iptables persist
+- name: 'Drop everything else {{ external_interface }}'
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    jump: DROP
+  notify:
+    - iptables persist

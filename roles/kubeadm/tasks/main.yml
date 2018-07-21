@@ -1,0 +1,3 @@
+---
+- import_tasks: 01-kubeadm-kubelet-kubectl.yml
+- import_tasks: 02-cifs-flexvolume-plugin.yml

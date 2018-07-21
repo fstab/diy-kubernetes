@@ -1,0 +1,7 @@
+[Service]
+# Make sure kubelet uses the systemd cgroup driver
+Environment="KUBELET_CGROUP_ARGS=--cgroup-driver=systemd"
+# Make sure kubelet binds to vpn0 instead of eth0
+Environment="KUBELET_INTERNAL_IP=--node-ip={{ vpn_ip }}"
+ExecStart=
+ExecStart=/usr/bin/kubelet $KUBELET_INTERNAL_IP $KUBELET_KUBECONFIG_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_AUTHZ_ARGS $KUBELET_CGROUP_ARGS $KUBELET_CADVISOR_ARGS $KUBELET_CERTIFICATE_ARGS $KUBELET_EXTRA_ARGS

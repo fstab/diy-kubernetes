@@ -1,0 +1,9 @@
+---
+# For necessary config changes to run prometheus-operator with kubeadm, see 
+# https://github.com/coreos/prometheus-operator/blob/master/contrib/kube-prometheus/docs/kube-prometheus-on-kubeadm.md
+- name: Reconfigure the Kubelet Service
+  copy:
+    src: ../files/12-kube-prometheus.conf
+    dest: /etc/systemd/system/kubelet.service.d/12-kube-prometheus.conf
+  notify:
+    - restart kubelet

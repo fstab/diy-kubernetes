@@ -1,0 +1,7 @@
+---
+- name: Prepare non-interactive install of iptables-persistent package (1/2)
+  debconf: name=iptables-persistent question=iptables-persistent/autosave_v4 vtype=select value=true
+- name: Prepare non-interactive install of iptables-persistent package (2/2)
+  debconf: name=iptables-persistent question=iptables-persistent/autosave_v6 vtype=select value=false
+- name: Install iptables-persistent, which includes netfilter-persistent
+  apt: name=iptables-persistent

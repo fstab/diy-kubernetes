@@ -1,0 +1,5 @@
+---
+- name: join
+  shell: "{{ kubeadm_join_command }}"
+  args:
+    creates: /etc/kubernetes/kubelet.conf

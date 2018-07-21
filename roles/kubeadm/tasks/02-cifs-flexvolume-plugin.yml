@@ -1,0 +1,28 @@
+---
+- name: Install packages required by the cifs flexvolume plugin
+  apt:
+    name: '{{ item }}'
+  with_items:
+    - jq
+    - cifs-utils
+
+- name: Create cifs flexvolume plugin directory
+  file:
+    path: "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/fstab~cifs"
+    state: directory
+
+- name: Install the cifs flexvolume plugin
+  get_url:
+    url: "https://github.com/fstab/cifs/releases/download/{{ cifs_plugin_version }}/cifs"
+    dest: "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/fstab~cifs/cifs"
+    checksum: "{{ cifs_plugin_checksum }}"
+    mode: 0755
+
+- name: Test call for the cifs flexvolume plugin
+  command: "/usr/libexec/kubernetes/kubelet-plugins/volume/exec/fstab~cifs/cifs init"
+  changed_when: False
+  register: fstab_cifs_init
+
+- name: Fail if the cifs flexvolume plugin test call failed
+  fail:
+  when: fstab_cifs_init.stdout.find('Success') == -1 or fstab_cifs_init.rc != 0

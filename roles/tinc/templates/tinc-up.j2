@@ -1,0 +1,5 @@
+#!/bin/bash
+
+ip link set $INTERFACE up
+ip addr add {{ vpn_ip }}/24 dev $INTERFACE
+ip route add 172.16.0.0/24 dev $INTERFACE

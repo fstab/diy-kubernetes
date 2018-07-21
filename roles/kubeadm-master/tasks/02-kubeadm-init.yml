@@ -1,0 +1,51 @@
+---
+# For debugging, you can undo kubeadm init with 'kubeadm reset'
+
+- name: kubeadm init
+  shell: >
+    kubeadm init
+    --ignore-preflight-errors=DirAvailable--var-lib-etcd
+    --pod-network-cidr 10.244.0.0/16
+    --apiserver-advertise-address 172.16.0.100
+  args:
+    creates: /etc/kubernetes/admin.conf
+
+- name: Create kube config directory for user root
+  file:
+    path: /root/.kube
+    state: directory
+
+- name: Copy kube config for user root
+  copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    mode: 0600
+
+- name: sysctl net.bridge.bridge-nf-call-iptables=1
+  sysctl:
+    name: net.bridge.bridge-nf-call-iptables
+    value: 1
+
+- name: upload flannel configuration
+  copy:
+    src: ../files/kube-flannel.yml
+    dest: /root/kube-flannel.yml
+
+- name: install flannel
+  shell: kubectl apply -f /root/kube-flannel.yml
+  args:
+    creates: /etc/cni/net.d/10-flannel.conf
+
+- name: Create a bootstrap token
+  shell: kubeadm token create --description "ansible token created on $(date)" --print-join-command
+  register: kubeadm_token_create
+  changed_when: False
+
+- name: Set the bootstrap token on the kube nodes
+  set_fact:
+    kubeadm_join_command: "{{ kubeadm_token_create.stdout }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: True
+  with_items: "{{ groups['kube-nodes'] }}"
+  changed_when: False

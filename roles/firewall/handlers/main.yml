@@ -1,0 +1,3 @@
+---
+- name: iptables persist
+  shell: netfilter-persistent save

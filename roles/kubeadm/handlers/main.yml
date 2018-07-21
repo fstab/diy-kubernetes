@@ -1,0 +1,11 @@
+---
+# handlers file for kubeadm
+
+- name: daemon-reload
+  systemd:
+    daemon_reload: yes
+
+- name: restart kubelet
+  systemd:
+    name: kubelet
+    state: restarted

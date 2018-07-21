@@ -1,0 +1,26 @@
+---
+- name: Install docker
+  apt: name=docker.io
+
+- name: Get docker info
+  shell: docker info
+  changed_when: false
+  register: docker_info_output
+
+# Docker and kubeadm must use the same cgroup driver, so use systemd for both.
+- name: If docker uses cgroupfs, switch to systemd
+  template:
+    src: "daemon.json"
+    dest: "/etc/docker/daemon.json"
+  when: "docker_info_output.stdout.find('Cgroup Driver: cgroupfs') != -1"
+  notify: restart docker
+
+- name: Enable docker
+  systemd:
+    name: docker
+    enabled: yes
+
+- name: Start docker
+  systemd:
+    name: docker
+    state: started

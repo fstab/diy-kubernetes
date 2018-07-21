@@ -1,0 +1,9 @@
+Name = {{ tinc_host_name }}
+Mode = switch
+Device = /dev/net/tun
+AddressFamily = ipv4
+{% for host in groups['kube-cluster'] %}
+{% if inventory_hostname != hostvars[host]['inventory_hostname'] %}
+ConnectTo = {{ hostvars[host]['inventory_hostname'] | regex_replace('-', '_') }}
+{% endif %}
+{% endfor %}

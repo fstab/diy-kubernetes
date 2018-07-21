@@ -1,0 +1,67 @@
+---
+- name: Install git, golang-go
+  apt:
+    name: '{{ item }}'
+    state: present
+  with_items:
+    - git
+    - golang-go
+
+# For necessary config changes to run prometheus-operator with kubeadm, see 
+# https://github.com/coreos/prometheus-operator/blob/master/contrib/kube-prometheus/docs/kube-prometheus-on-kubeadm.md
+- name: Reconfigure kube-controller-manager and kube-scheduler to listen on non-local addresses
+  replace:
+    path: "/etc/kubernetes/manifests/{{ item }}"
+    regexp: "--address=127.0.0.1"
+    replace: "--address=0.0.0.0"
+  with_items:
+    - "kube-controller-manager.yaml"
+    - "kube-scheduler.yaml"
+
+- name: Install jsonnet and jsonnet-bundler
+  shell: 'go get {{ item.source }} && go install {{ item.source }}'
+  args:
+    creates: '/root/go/bin/{{ item.binary }}'
+  with_items:
+    - { source: 'github.com/google/go-jsonnet/jsonnet', binary: 'jsonnet' }
+    - { source: 'github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb', binary: 'jb' }
+
+- name: Create directory for the jsonnet templates
+  file:
+    path: /root/my-kube-prometheus
+    state: directory
+
+- name: Get the jsonnet templates
+  shell: '/root/go/bin/jb init && /root/go/bin/jb install github.com/coreos/prometheus-operator/contrib/kube-prometheus/jsonnet/kube-prometheus'
+  args:
+    chdir: /root/my-kube-prometheus
+    creates: /root/my-kube-prometheus/jsonnetfile.json
+
+- name: Upload the jsonnet definition
+  copy:
+    src: ../files/example.jsonnet
+    dest: /root/my-kube-prometheus/example.jsonnet
+
+- name: Create output directory for the manifests
+  file:
+    path: /root/my-kube-prometheus/manifests
+    state: directory
+
+- name: Generate the manifests
+  shell: '/root/go/bin/jsonnet -J vendor -m manifests example.jsonnet'
+  args:
+    chdir: /root/my-kube-prometheus
+    creates: /root/my-kube-prometheus/manifests/00namespace-namespace.json
+
+- name: Create list of kube-prometheus json files
+  find:
+    path: /root/my-kube-prometheus/manifests
+    patterns: "*.json"
+  register: find_kube_prometheus_json
+  changed_when: False
+
+- name: Apply kube-prometheus json files
+  shell: "kubectl apply -f {{ item }}"
+  register: kubectl_apply_prometheus
+  changed_when: "kubectl_apply_prometheus.stdout.find('created') != -1"
+  with_items: "{{ find_kube_prometheus_json.files | map(attribute='path') | sort }}"

@@ -1,0 +1,29 @@
+- hosts: all
+  roles:
+   - role: firewall
+   - role: tinc
+
+- hosts: kube-cluster
+  roles:
+   - role: docker
+   - role: kubeadm
+
+- hosts: kube-masters
+  roles:
+   - role: kubeadm-master
+
+- hosts: kube-nodes
+  roles:
+   - role: kubeadm-node
+
+- hosts: kube-cluster
+  roles:
+   - role: kubelet-for-prometheus
+
+- hosts: kube-masters
+  roles:
+   - role: prometheus
+
+- hosts: load-balancer
+  roles:
+   - role: load-balancer

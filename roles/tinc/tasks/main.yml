@@ -1,0 +1,137 @@
+---
+
+# This script assumes an inventory file with the following format:
+# ---
+# kube-node-1 vpn_ip=172.16.0.1 ansible_host=195.201.25.33 ansible_user=root
+# kube-node-2 vpn_ip=172.16.0.2 ansible_host=78.46.158.93 ansible_user=root
+# ---
+
+# Convert the inventory host name 'kube-node-1' into a valid tinc host name 'kube_node_1'.
+- name: Set tinc host name
+  set_fact:
+    tinc_host_name: "{{ inventory_hostname | regex_replace('-', '_') }}"
+
+- name: "Install tinc"
+  apt: name=tinc
+
+- name: "Enable tinc service for vpn0 network"
+  service:
+    name: "tinc@{{ netname }}"
+    enabled: yes
+
+- name: "Create config directory"
+  file:
+    path: "/etc/tinc/{{ netname }}/hosts"
+    state: "directory"
+    recurse: true
+
+- name: "Main config : create"
+  template:
+    src: "tinc.conf.j2"
+    dest: "/etc/tinc/{{ netname }}/tinc.conf"
+  notify:
+    - reload tinc
+
+- name: "Host config : Add public IP address."
+  lineinfile:
+    path: /etc/tinc/{{ netname }}/hosts/{{ tinc_host_name }}
+    line: "Address = {{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
+    create: yes
+  notify:
+    - reload tinc
+
+- name: "Host config : Add VPN IP address"
+  lineinfile:
+    path: /etc/tinc/{{ netname }}/hosts/{{ tinc_host_name }}
+    line: "Subnet = {{ vpn_ip }}/32"
+    create: yes
+  notify:
+    - reload tinc
+
+- name: "Host config : Read the host config file"
+  shell: cat /etc/tinc/{{ netname }}/hosts/{{ tinc_host_name }}
+  changed_when: False
+  register: host_config_file
+
+# We could create the keys with 'tincd -n {{ netname }} -K 4096', but it seems that
+# different versions of tincd create the public key in different locations.
+# To avoid problems, we call openssl directly to create the keys.
+- name: "Host config : Create new private key unless public key exists"
+  shell: openssl genrsa -out /etc/tinc/{{ netname }}/rsa_key.priv 4096 2>/dev/null
+  args:
+    creates: /etc/tinc/{{ netname }}/rsa_key.priv
+  when: host_config_file.stdout.find('PUBLIC KEY') == -1
+  notify:
+    - reload tinc
+
+- name: "Host config : Set private key permissions"
+  file: path=/etc/tinc/{{ netname }}/rsa_key.priv mode=0600
+
+- name: "Host config : Create new public key unless it already exists"
+  shell: echo >> /etc/tinc/{{ netname }}/hosts/{{ tinc_host_name }} && openssl rsa -pubout -in /etc/tinc/{{ netname }}/rsa_key.priv >> /etc/tinc/{{ netname }}/hosts/{{ tinc_host_name }}
+  when: host_config_file.stdout.find('PUBLIC KEY') == -1
+  notify:
+    - reload tinc
+
+- name: "Fetch host configs"
+  fetch:
+    src: /etc/tinc/{{ netname }}/hosts/{{ tinc_host_name }}
+    dest: tinc-host-configs/{{ tinc_host_name }}
+    flat: yes
+
+- name: "Distribute host configs"
+  synchronize:
+    src: tinc-host-configs/
+    dest: /etc/tinc/{{ netname }}/hosts/
+  notify:
+    - reload tinc
+
+- name: "Create tinc-up script"
+  template: src=tinc-up.j2 dest=/etc/tinc/{{ netname }}/tinc-up
+  notify:
+    - restart tinc
+
+- name: "Set tinc-up permissions"
+  file: path=/etc/tinc/{{ netname }}/tinc-up mode=0755
+  notify:
+    - restart tinc
+
+- name: "Create tinc-down script"
+  template: src=tinc-down.j2 dest=/etc/tinc/{{ netname }}/tinc-down
+  notify:
+    - restart tinc
+
+- name: "Set tinc-down permissions"
+  file: path=/etc/tinc/{{ netname }}/tinc-down mode=0755
+  notify:
+    - restart tinc
+
+- name: "Enable tinc network on boot time"
+  lineinfile:
+    path: /etc/tinc/nets.boot
+    line: "{{ netname }}"
+    create: yes
+  notify:
+    - restart tinc
+
+- name: "Open tinc firewall port on {{ external_interface }}"
+  iptables:
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: tcp
+    destination_port: 655
+    jump: ACCEPT
+    action: insert
+  notify:
+    - iptables persist
+    - restart tinc
+
+- name: "Run handlers"
+  meta: flush_handlers
+
+- name: "Test if all tinc nodes can ping each other"
+  shell: "ping -c 1 {{ hostvars[item]['vpn_ip'] }}"
+  register: ping_tinc_nodes
+  until: ping_tinc_nodes is succeeded
+  changed_when: False
+  with_items: "{{ groups['kube-cluster'] }}"

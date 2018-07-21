@@ -1,0 +1,117 @@
+---
+- name: install nginx
+  apt:
+    name: nginx
+
+- name: enable and start nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+- name: "Create local folder for OpenSSL Client Certificate"
+  local_action:
+    module: file
+    path: ./client-certificate
+    state: directory
+    mode: 0700
+
+- name: "Generate a OpenSSL Client Certificate in PEM format"
+  local_action:
+    module: shell
+    _raw_params: "openssl req -nodes -subj '/CN=*.example.com' -x509 -newkey rsa:4096 -keyout ./client-certificate/self-signed-private-key.pem -out ./client-certificate/self-signed-client-public-ca.pem -days 365"
+    args:
+      creates: ./client-certificate/self-signed-private-key.pem
+
+- name: "Generate a OpenSSL Client Certificate in PFX format"
+  local_action:
+    module: shell
+    _raw_params: "openssl pkcs12 -export -password 'pass:' -in ./client-certificate/self-signed-client-public-ca.pem -inkey ./client-certificate/self-signed-private-key.pem -out ./client-certificate/self-signed-client-certificate.pfx"
+    args:
+      creates: ./client-certificate/self-signed-client-certificate.pfx
+
+- name: "Set permissions for OpenSSL Client Certificate"
+  local_action:
+    module: file
+    path: "./client-certificate/{{ item }}"
+    mode: 0600
+  with_items:
+    - self-signed-private-key.pem
+    - self-signed-client-certificate.pfx
+
+- name: "Upload Public OpenSSL Client Certificate CA"
+  copy:
+    src: ./client-certificate/self-signed-client-public-ca.pem
+    dest: /etc/nginx/certs/
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+
+- name: "Install python-openssl, as required for the ansible openssl modules"
+  apt:
+    name: python-openssl
+
+- name: "Generate an OpenSSL private key."
+  openssl_privatekey:
+    path: /etc/nginx/certs/ssl-cert-snakeoil.key
+  notify:
+    - restart nginx
+
+- name: "Generate an OpenSSL CSR."
+  openssl_csr:
+    path: /etc/nginx/certs/ssl-cert-snakeoil.csr
+    privatekey_path: /etc/nginx/certs/ssl-cert-snakeoil.key
+    common_name: example.com
+  notify:
+    - restart nginx
+
+- name: "Generate a Self Signed OpenSSL certificate"
+  openssl_certificate:
+    path: /etc/nginx/certs/ssl-cert-snakeoil.pem
+    privatekey_path: /etc/nginx/certs/ssl-cert-snakeoil.key
+    csr_path: /etc/nginx/certs/ssl-cert-snakeoil.csr
+    provider: selfsigned
+  notify:
+    - restart nginx
+
+- name: "Upload nginx config"
+  copy:
+    src: ../files/example.com
+    dest: /etc/nginx/sites-available/
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - restart nginx
+
+- name: "Disable nginx default config"
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify:
+    - restart nginx
+
+- name: "Enable nginx config"
+  file:
+    src: /etc/nginx/sites-available/example.com
+    dest: /etc/nginx/sites-enabled/example.com
+    state: link
+  notify:
+    - restart nginx
+
+- name: 'Allow http(s) on {{ external_interface }}'
+  iptables:
+    action: insert
+    chain: INPUT
+    in_interface: '{{ external_interface }}'
+    protocol: tcp
+    destination_port: '{{ item }}'
+    jump: ACCEPT
+  notify:
+    - iptables persist
+  with_items:
+    - 80
+    - 443

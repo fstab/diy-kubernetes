@@ -1,0 +1,6 @@
+---
+- import_tasks: 01-restore-backup.yml
+  tags: [ 'restore', 'never' ]
+- import_tasks: 02-kubeadm-init.yml
+- import_tasks: 03-create-backup.yml
+- import_tasks: 04-example-deployment.yml
